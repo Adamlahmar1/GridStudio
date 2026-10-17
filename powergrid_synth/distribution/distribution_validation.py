@@ -70,8 +70,15 @@ def extract_degree_distribution(G: nx.Graph) -> np.ndarray:
 
 
 def extract_cable_length_distribution(G: nx.Graph, n_bins: int = 50) -> Tuple[np.ndarray, np.ndarray]:
-    """Return cable-length histogram (counts, bin_edges)."""
-    lengths = [G.edges[e]["length_km"] for e in G.edges if "length_km" in G.edges[e]]
+    """Return cable-length histogram (counts, bin_edges).
+
+    Only considers real cable edges (``edge_type == "line"``), so switch
+    and transformer placeholder edges don't distort the distribution.
+    """
+    lengths = [
+        G.edges[e]["length_km"] for e in G.edges
+        if "length_km" in G.edges[e] and G.edges[e].get("edge_type", "line") == "line"
+    ]
     if not lengths:
         return np.array([0]), np.array([0, 1])
     return np.histogram(lengths, bins=n_bins)
@@ -120,7 +127,10 @@ def compute_emergent_properties(G: nx.Graph) -> Dict[str, float]:
     frac_int = n_int / n_nodes if n_nodes > 0 else 0.0
     frac_inj = n_inj / n_nodes if n_nodes > 0 else 0.0
 
-    lengths = [G.edges[e].get("length_km", 0.0) for e in G.edges]
+    lengths = [
+        G.edges[e].get("length_km", 0.0) for e in G.edges
+        if G.edges[e].get("edge_type", "line") == "line"
+    ]
     mean_len = np.mean(lengths) if lengths else 0.0
     max_len = max(lengths) if lengths else 0.0
     total_len = sum(lengths)
@@ -169,9 +179,16 @@ def compare_feeders(
     # Cable length
     cl_syn, edges_syn = extract_cable_length_distribution(synthetic)
     cl_ref, edges_ref = extract_cable_length_distribution(reference)
-    # Re-histogram on common bins
-    len_syn = [synthetic.edges[e]["length_km"] for e in synthetic.edges if "length_km" in synthetic.edges[e]]
-    len_ref = [reference.edges[e]["length_km"] for e in reference.edges if "length_km" in reference.edges[e]]
+    # Re-histogram on common bins (real cable edges only, see
+    # extract_cable_length_distribution)
+    len_syn = [
+        synthetic.edges[e]["length_km"] for e in synthetic.edges
+        if "length_km" in synthetic.edges[e] and synthetic.edges[e].get("edge_type", "line") == "line"
+    ]
+    len_ref = [
+        reference.edges[e]["length_km"] for e in reference.edges
+        if "length_km" in reference.edges[e] and reference.edges[e].get("edge_type", "line") == "line"
+    ]
     if len_syn and len_ref:
         lo = min(min(len_syn), min(len_ref))
         hi = max(max(len_syn), max(len_ref))

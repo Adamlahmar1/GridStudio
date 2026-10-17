@@ -1,0 +1,9 @@
+# Dependencies of the Docker image (versions I developed and tested the pipeline with)
+numpy==2.3.5
+scipy==1.16.3
+pandas==2.3.3
+networkx==3.6.1
+matplotlib==3.11.0
+pandapower==3.4.0
+# optional speed-up for pandapower's power flow; also avoids its "numba cannot be imported" warning
+numba>=0.62

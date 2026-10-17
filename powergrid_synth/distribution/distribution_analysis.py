@@ -59,13 +59,22 @@ def _degrees(feeders: Sequence[nx.Graph]) -> np.ndarray:
 
 
 def _cable_lengths(feeders: Sequence[nx.Graph]) -> np.ndarray:
-    """Collect all cable lengths in km."""
+    """Collect all cable lengths in km.
+
+    Excludes switch/transformer edges (placeholder lengths, not physical
+    cable runs) when ``edge_type`` is available; falls back to including
+    everything with a positive length otherwise.
+    """
     lens = []
     for G in feeders:
         for e in G.edges:
-            l = G.edges[e].get("length_km", None)
-            if l is not None and l > 0:
-                lens.append(l)
+            d = G.edges[e]
+            l = d.get("length_km", None)
+            if l is None or l <= 0:
+                continue
+            if d.get("edge_type", "line") != "line":
+                continue
+            lens.append(l)
     return np.array(lens)
 
 
@@ -175,6 +184,23 @@ def fit_beta(data: np.ndarray) -> BetaParams:
     return BetaParams(alpha=float(a), beta=float(b))
 
 
+def _fit_beta_or_default(data: np.ndarray, default: BetaParams) -> BetaParams:
+    """Fit a Beta distribution if there's enough informative data in (0, 1),
+    otherwise fall back to a calibrated default.
+
+    ``fit_beta`` itself falls back to an uninformative Beta(1,1) = Uniform(0,1)
+    when too few points survive its (0, 1) filtering -- e.g. when every real
+    feeder we have shows exactly 0% (or 100%) of a fraction. Checking
+    ``len(data) > 0`` at the call site doesn't catch that, since a single
+    all-zero array still has length 1. Filtering the same way here first
+    lets the caller tell "no data" from "data with no informative spread"
+    apart, and use its own calibrated prior for the latter instead of
+    silently sampling from Uniform(0, 1).
+    """
+    filtered = data[(data > 0) & (data < 1)]
+    return fit_beta(data) if len(filtered) >= 2 else default
+
+
 def fit_t_location_scale(data: np.ndarray) -> TLocationScaleParams:
     """Fit t-Location-Scale distribution via MLE."""
     if len(data) < 3:
@@ -200,6 +226,8 @@ def fit_exponential_clip(
     max_by_h: Dict[int, float] = defaultdict(float)
     for G in feeders:
         for u, v in G.edges:
+            if G.edges[u, v].get("edge_type", "line") != "line":
+                continue
             h = max(G.nodes[u]["h"], G.nodes[v]["h"])
             l = G.edges[u, v].get("length_km", 0)
             if l > max_by_h[h]:
@@ -280,8 +308,8 @@ def fit_params_from_feeders(
         hop_dist=fit_neg_binomial(hops) if len(hops) > 0 else NegBinomParams(),
         degree_dist=fit_mixture_gamma(degs) if len(degs) > 0 else MixtureGammaParams(),
         degree_clip=fit_power_law_clip(feeders),
-        intermediate_frac=fit_beta(int_frac) if len(int_frac) > 0 else BetaParams(1.64, 15.77),
-        injection_frac=fit_beta(inj_frac) if len(inj_frac) > 0 else BetaParams(0.92, 20.53),
+        intermediate_frac=_fit_beta_or_default(int_frac, BetaParams(1.64, 15.77)),
+        injection_frac=_fit_beta_or_default(inj_frac, BetaParams(0.92, 20.53)),
         load_deviation=fit_t_location_scale(load_dev) if len(load_dev) > 0 else TLocationScaleParams(),
         cable_length=fit_modified_cauchy(lengths) if len(lengths) > 0 else ModifiedCauchyParams(),
         length_clip=fit_exponential_clip(feeders),

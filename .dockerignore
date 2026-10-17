@@ -1,0 +1,6 @@
+# Only what the image needs goes into the build context
+*
+!powergrid_synth
+!pipeline.py
+!requirements-docker.txt
+**/__pycache__

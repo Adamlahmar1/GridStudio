@@ -50,6 +50,7 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
             int(row["from_bus"]),
             int(row["to_bus"]),
             length_km=row["length_km"],
+            edge_type="line",
         )
 
     # --- Edges: transformers (treated as short connections) -------------------
@@ -59,6 +60,7 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
                 int(row["hv_bus"]),
                 int(row["lv_bus"]),
                 length_km=0.01,
+                edge_type="transformer",
             )
 
     # --- Edges: closed bus-bus switches --------------------------------------
@@ -69,24 +71,35 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
                     int(row["bus"]),
                     int(row["element"]),
                     length_km=0.001,
+                    edge_type="switch",
                 )
 
     # --- Source buses (ext_grid) ---------------------------------------------
     source_buses = set(int(b) for b in net.ext_grid.bus.values)
 
     # --- Aggregate loads and generation per bus ------------------------------
+    # Bus *membership* (does this bus have a load/sgen device at all) is
+    # tracked separately from the *magnitude* (p_mw). Real-world exports can
+    # legitimately have p_mw == 0 for a device that is still physically a
+    # load/generator (e.g. a static snapshot with magnitudes supplied
+    # elsewhere), so node-type classification below uses membership, not
+    # magnitude, to decide load/injection/intermediate.
     bus_load: dict[int, float] = {}
     bus_load_q: dict[int, float] = {}
+    bus_has_load: set[int] = set()
     for _, row in net.load.iterrows():
         b = int(row["bus"])
         bus_load[b] = bus_load.get(b, 0.0) + row["p_mw"]
         bus_load_q[b] = bus_load_q.get(b, 0.0) + row["q_mvar"]
+        bus_has_load.add(b)
 
     bus_gen: dict[int, float] = {}
+    bus_has_gen: set[int] = set()
     if hasattr(net, "sgen") and len(net.sgen) > 0:
         for _, row in net.sgen.iterrows():
             b = int(row["bus"])
             bus_gen[b] = bus_gen.get(b, 0.0) + row["p_mw"]
+            bus_has_gen.add(b)
 
     # --- Build feeders per connected component -------------------------------
     feeders: list[nx.Graph] = []
@@ -105,17 +118,23 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
             hop[v] = hop[u] + 1
         nx.set_node_attributes(sub, hop, "h")
 
-        # Assign node types and power
+        # Assign node types and power (by device membership, see note above)
         for n in sub.nodes:
             p_load = bus_load.get(n, 0.0)
             p_gen = bus_gen.get(n, 0.0)
+            has_load = n in bus_has_load
+            has_gen = n in bus_has_gen
 
-            if p_gen > 0 and p_load == 0:
+            if has_gen and not has_load:
                 sub.nodes[n]["node_type"] = "injection"
                 sub.nodes[n]["P_mw"] = -p_gen
-            elif p_load > 0:
+            elif has_load:
                 sub.nodes[n]["node_type"] = "load"
-                sub.nodes[n]["P_mw"] = p_load
+                # Net of any co-located generation (prosumer bus): a bus with
+                # both a load and a generator device is still classified as
+                # "load" (see membership note above), but its P_mw should
+                # reflect actual net demand, not silently drop the generation.
+                sub.nodes[n]["P_mw"] = p_load - p_gen
             else:
                 sub.nodes[n]["node_type"] = "intermediate"
                 sub.nodes[n]["P_mw"] = 0.0

@@ -340,13 +340,19 @@ class SchweetzerFeederGenerator:
         if n_inj_actual == 0:
             return
 
+        shares = []
         for n in injection_nodes:
             while True:
                 eps = self.rng.normal(nd.mu, nd.sigma)
-                if 1.0 / n_inj_actual + eps > 0:
+                share = 1.0 / n_inj_actual + eps
+                if share > 0.0:
                     break
+            shares.append(share)
+        shares = np.array(shares) / sum(shares)  # shares must sum to 1
+
+        for n, share in zip(injection_nodes, shares):
             pf = G.nodes[n]["pf"]
-            P = -total_gen_mw * (1.0 / n_inj_actual + eps)
+            P = -total_gen_mw * share
             G.nodes[n]["P_mw"] = P
             G.nodes[n]["Q_mvar"] = P * math.tan(math.acos(pf))
 
@@ -362,16 +368,25 @@ class SchweetzerFeederGenerator:
             return
 
         tls = p.load_deviation
+        shares = []
         for n in load_nodes:
             while True:
                 eps = stats.t.rvs(
                     tls.nu, loc=tls.mu, scale=tls.sigma,
                     random_state=self.rng,
                 )
-                if 1.0 / n_load + eps > 0:
+                share = 1.0 / n_load + eps
+                if share > 0.0:
                     break
+            shares.append(share)
+        # Individual draws from a heavy-tailed (low-nu) load_deviation fit don't
+        # sum to 1 on their own -- normalize so the assigned total always equals
+        # total_load_mw exactly, regardless of how skewed the real fit is.
+        shares = np.array(shares) / sum(shares)
+
+        for n, share in zip(load_nodes, shares):
             pf = G.nodes[n]["pf"]
-            P = total_load_mw * (1.0 / n_load + eps)
+            P = total_load_mw * share
             G.nodes[n]["P_mw"] = P
             G.nodes[n]["Q_mvar"] = P * math.tan(math.acos(pf))
 
@@ -403,20 +418,28 @@ class SchweetzerFeederGenerator:
 
             h = G.nodes[downstream_node]["h"]
             S_down = abs(downstream.get(downstream_node, 0.0))
+            # S_down in MW, v_nom_kv in kV -> I_est in kA (standard I = S / (sqrt(3) * V)).
             I_est = S_down / (math.sqrt(3) * v_nom_kv) if v_nom_kv > 0 else 0.0
+            # _pick_cable_by_capacity expects its target in amps (it divides by 1000
+            # internally to compare against cable max_i_ka) -- convert here, since I_est
+            # itself is already in kA. Passing kA straight through used to make every
+            # target ~1000x too small, so cable selection collapsed onto the smallest
+            # library entry (Cu50) almost everywhere regardless of actual downstream
+            # current, causing systematic overloads under power flow.
+            I_est_a = I_est * 1000.0
 
-            if I_est > 0:
+            if I_est_a > 0:
                 if self.rng.uniform() < 2.0 / 3.0:
                     # Use max nominal current of downstream node's incident cables
                     # (for the first pass, just pick the median cable)
                     cable = self._pick_cable_by_capacity(
-                        I_est * 1.5, h, library, threshold
+                        I_est_a * 1.5, h, library, threshold
                     )
                 else:
                     # Sample I_est/I_nom from Exponential, solve for I_nom
                     ratio = self.rng.exponential(p.current_ratio.mu)
                     ratio = max(ratio, 0.01)  # avoid division by zero
-                    i_nom_target = I_est / ratio
+                    i_nom_target = I_est_a / ratio
                     cable = self._pick_cable_by_capacity(
                         i_nom_target, h, library, threshold
                     )
@@ -428,7 +451,7 @@ class SchweetzerFeederGenerator:
             G.edges[u, v]["max_i_ka"] = cable.max_i_ka
             G.edges[u, v]["r_per_km"] = cable.r_ohm_per_km
             G.edges[u, v]["x_per_km"] = cable.x_ohm_per_km
-            G.edges[u, v]["I_est_ka"] = I_est / 1000.0
+            G.edges[u, v]["I_est_ka"] = I_est
 
     def _pick_cable_by_capacity(
         self,
