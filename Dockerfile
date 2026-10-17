@@ -6,6 +6,12 @@
 # The ENEL data is NOT part of the image: it is provided by ENEL and mounted at /data.
 FROM python:3.12-slim
 
+# Image metadata (shown by "docker inspect" and on Docker Hub)
+LABEL org.opencontainers.image.title="GridStudio ENEL pipeline" \
+      org.opencontainers.image.description="Reference-based synthesis and validation of a medium-voltage distribution feeder (Schweitzer et al., 2017)" \
+      org.opencontainers.image.source="https://github.com/Adamlahmar1/GridStudio" \
+      org.opencontainers.image.authors="Adam Lahmar"
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     MPLBACKEND=Agg \
@@ -15,6 +21,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Dependencies first: this layer is cached, so a code change does not re-download every package.
 COPY requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt
 

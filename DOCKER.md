@@ -34,6 +34,24 @@ docker run --rm -v /path/to/ENEL_grid_data:/data:ro -v "$PWD/output:/output" gri
 
 The generated feeder is written to `output/synthetic_enel_feeder.json` (pandapower JSON, load it with `pandapower.from_json`).
 
+## Quick check (no data needed)
+
+```bash
+docker run --rm gridstudio-enel --help
+```
+
+If this prints the list of options, the image itself works. Running without mounted data stops immediately with a
+clear message ("ENEL network file not found ..."), it does not crash.
+
+## Troubleshooting
+
+| Message / symptom | Cause and fix |
+|---|---|
+| `ENEL network file not found: /data/ppnet_.../...json` | The data folder is not mounted, or it is the wrong folder. `-v` must point to the folder that **contains** `ppnet_DW00.1.382280-VE_202412/` and `timeseries_data/`. |
+| `error during connect` / `cannot connect to the Docker daemon` | Docker Desktop is not running yet. Start it and wait until it reports "Engine running". |
+| Path with spaces on Windows | Put the whole `-v` argument in double quotes, as in the example above. |
+| No `synthetic_enel_feeder.json` appears | The output folder was not mounted. Add `-v "${PWD}\output:/output"` (PowerShell) or `-v "$PWD/output:/output"` (Linux/macOS). |
+
 ## Options
 
 Extra arguments after the image name are passed to `pipeline.py`:
