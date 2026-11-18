@@ -1,3 +1,4 @@
+# Author: Adam Lahmar <adam.lahmar@rwth-aachen.de>
 """
 Convert a Schweitzer-format feeder graph (from ``pandapower_to_feeders`` or
 ``SchweetzerFeederGenerator.generate_feeder``) into a runnable pandapower
@@ -56,10 +57,15 @@ def feeder_to_pandapower(G: nx.Graph, sn_mva: float = 1.0) -> "pp.pandapowerNet"
             pp.create_sgen(net, bus=n, p_mw=-p_mw, q_mvar=-q_mvar)
 
     for u, v, d in G.edges(data=True):
+        if d.get("edge_type", "line") == "switch":
+            # connection marked as a switch (see distribution_equipment.assign_switch_edges): closed bus-bus switch
+            pp.create_switch(net, bus=u, element=v, et="b", closed=True)
+            continue
         length_km = d.get("length_km", 0.001)
         r_per_km = d.get("r_per_km", 0.0)
         x_per_km = d.get("x_per_km", 0.0)
-        c_nf_per_km = _CABLE_C_NF_PER_KM.get(d.get("cable_type"), 0.0)
+        # capacitance stored on the edge by the generator (also for cables of a custom library); else the default library
+        c_nf_per_km = d.get("c_nf_per_km", _CABLE_C_NF_PER_KM.get(d.get("cable_type"), 0.0))
         max_i_ka = d.get("max_i_ka", 1.0)
         pp.create_line_from_parameters(
             net, from_bus=u, to_bus=v, length_km=length_km,

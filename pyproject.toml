@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 
+[tool.setuptools.package-data]
+powergrid_synth = ["distribution/*.html"]
+
 [tool.setuptools.packages.find]
 where = ["."] 
 include = ["powergrid_synth*"] 

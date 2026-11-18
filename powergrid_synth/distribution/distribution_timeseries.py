@@ -1,3 +1,4 @@
+# Author: Adam Lahmar <adam.lahmar@rwth-aachen.de>
 """
 Wire real, measured power magnitudes from the ENEL 5-minute time-series
 exports into a static pandapower snapshot's load/sgen tables.
@@ -37,6 +38,77 @@ import pandas as pd
 def _clip_mean(series: pd.Series, keep_positive: bool) -> float:
     s = series if keep_positive else -series
     return float(s.clip(lower=0.0).mean())
+
+
+def design_load_mw(net, timeseries_dir: Path, quantile: float = 0.99) -> float:
+    """Total load (MW) that the feeder has to be able to carry: the ``quantile`` of the summed load over the whole time
+    series, with the generation left out (the busiest moment is typically one without sun).
+
+    The load is summed the same way as in ``apply_real_power_snapshot`` (import side only). A quantile is used instead
+    of the maximum because of artefacts in the data (for example the clock change in autumn can duplicate an hour, which gives
+    about an hour of doubled readings). A device without a reading counts as zero: if one small load has no values for some
+    months, without this every step of these months would be unknown (NaN) and ignored."""
+    timeseries_dir = Path(timeseries_dir)
+    load_wide = pd.read_csv(timeseries_dir / "load_timeseries_5min.csv")
+    trafo_wide = pd.read_csv(timeseries_dir / "transformer_timeseries_5min.csv")
+    total = pd.Series(0.0, index=load_wide.index)
+    for _, row in net.load.iterrows():
+        cod = row["agui_cod"]
+        if row["agui_type"] == "pod":
+            total += (load_wide[f"{cod}_A1"] / 1000.0).fillna(0.0)
+        else:
+            total += trafo_wide[f"{cod}_A"].clip(lower=0.0).fillna(0.0)
+    return float(total.quantile(quantile))
+
+
+def design_generation_mw(net, timeseries_dir: Path, quantile: float = 0.99) -> float:
+    """Total generation (MW) that the feeder has to be able to export: the ``quantile`` of the summed generation over the
+    whole time series (the sunniest moments), counted the same way as in ``apply_real_power_snapshot``.
+
+    Together with ``design_load_mw`` this gives the two cases a feeder is built for: peak load without generation, and
+    peak generation. Cables sized for the first case only are overloaded on sunny days."""
+    timeseries_dir = Path(timeseries_dir)
+    load_wide = pd.read_csv(timeseries_dir / "load_timeseries_5min.csv")
+    trafo_wide = pd.read_csv(timeseries_dir / "transformer_timeseries_5min.csv")
+    total = pd.Series(0.0, index=load_wide.index)
+    for _, row in net.sgen.iterrows():
+        cod = row["agui_cod"]
+        if row["agui_type"] == "transformer":
+            total += (-trafo_wide[f"{cod}_A"]).clip(lower=0.0).fillna(0.0)
+        else:
+            total += (load_wide[f"{cod}_A2"] / 1000.0).fillna(0.0)
+    return float(total.quantile(quantile))
+
+
+def peak_operating_points(net, timeseries_dir: Path, outlier_factor: float = 1.5) -> dict:
+    """The moments of the highest load and of the highest generation in the time series.
+
+    Returns ``{"peak_load": {...}, "peak_generation": {...}}``; each entry has ``time`` (as in the files), ``load_mw`` and
+    ``gen_mw``: the summed measured load and generation of THAT time step (a device without a reading counts as zero).
+    Load readings above ``outlier_factor`` times the 99th percentile are treated as errors and cannot be the peak (the clock
+    change in autumn can duplicate an hour, which gives about an hour of doubled readings, well above any real peak). The moment is found on the median of three consecutive
+    readings, so that a single wrong reading is not taken for the peak either; the values reported are the readings of the
+    chosen step. The rule is applied to the load only: generation peaks are short (a few hours a day at most), so the 99th
+    percentile can be far below a genuine peak."""
+    timeseries_dir = Path(timeseries_dir)
+    load_wide = pd.read_csv(timeseries_dir / "load_timeseries_5min.csv")
+    trafo_wide = pd.read_csv(timeseries_dir / "transformer_timeseries_5min.csv")
+    load = pd.Series(0.0, index=load_wide.index)
+    gen = pd.Series(0.0, index=load_wide.index)
+    for _, row in net.load.iterrows():
+        cod = row["agui_cod"]
+        load += ((load_wide[f"{cod}_A1"] / 1000.0) if row["agui_type"] == "pod" else trafo_wide[f"{cod}_A"].clip(lower=0.0)).fillna(0.0)
+    for _, row in net.sgen.iterrows():
+        cod = row["agui_cod"]
+        gen += ((-trafo_wide[f"{cod}_A"]).clip(lower=0.0) if row["agui_type"] == "transformer" else load_wide[f"{cod}_A2"] / 1000.0).fillna(0.0)
+    times = load_wide["time"] if "time" in load_wide.columns else pd.Series(load_wide.index.astype(str))
+
+    def at(series, drop_outliers):
+        valid = series.where(series <= outlier_factor * series.quantile(0.99)) if drop_outliers else series      # NaN = treated as an error
+        i = int(valid.rolling(3, center=True, min_periods=1).median().idxmax())
+        return {"time": str(times.iloc[i]), "load_mw": float(load.iloc[i]), "gen_mw": float(gen.iloc[i])}
+
+    return {"peak_load": at(load, True), "peak_generation": at(gen, False)}
 
 
 def apply_real_power_snapshot(net, timeseries_dir: Path) -> None:

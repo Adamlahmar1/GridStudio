@@ -1,0 +1,34 @@
+# The pipeline with Docker, nothing to install. Instructions: DOCKER.md
+#
+#   docker compose --profile tools build    build the image once
+#   docker compose run --rm pipeline        synthetic feeder + interactive map  -> output/
+#
+# Optional:
+#   docker compose run --rm compare         real feeder against 10 synthetic feeders (10-20 minutes)
+#   docker compose run --rm test            automated tests (no data needed)
+#
+# Settings (optional, in a file called .env next to this file, see .env.example):
+#   ENEL_DATA_DIR   folder with ppnet_DW00.1.382280-VE_202412/ and timeseries_data/   (default ./enel_data)
+#   OUTPUT_DIR      where the results are written                                      (default ./output)
+
+name: gridstudio
+
+x-gridstudio: &gridstudio
+  build: .
+  image: gridstudio-enel
+  profiles: ["tools"]              # started only by "docker compose run", never by "docker compose up"
+
+services:
+  pipeline:
+    <<: *gridstudio
+    command: ["pipeline"]
+    volumes: ["${ENEL_DATA_DIR:-./enel_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
+
+  compare:
+    <<: *gridstudio
+    command: ["compare", "--seeds", "10", "--out", "/output/report_rows.json"]
+    volumes: ["${ENEL_DATA_DIR:-./enel_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
+
+  test:
+    <<: *gridstudio
+    command: ["test"]

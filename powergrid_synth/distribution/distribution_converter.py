@@ -94,11 +94,13 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
         bus_has_load.add(b)
 
     bus_gen: dict[int, float] = {}
+    bus_gen_q: dict[int, float] = {}
     bus_has_gen: set[int] = set()
     if hasattr(net, "sgen") and len(net.sgen) > 0:
         for _, row in net.sgen.iterrows():
             b = int(row["bus"])
             bus_gen[b] = bus_gen.get(b, 0.0) + row["p_mw"]
+            bus_gen_q[b] = bus_gen_q.get(b, 0.0) + row["q_mvar"]
             bus_has_gen.add(b)
 
     # --- Build feeders per connected component -------------------------------
@@ -142,6 +144,10 @@ def pandapower_to_feeders(net: Any) -> list[nx.Graph]:
             q = bus_load_q.get(n, 0.0)
             s = np.sqrt(p_load**2 + q**2)
             sub.nodes[n]["pf"] = (p_load / s) if s > 0 else 0.95
+            # power factor of the GENERATION of the bus (its own reactive power; "pf" above belongs to the load)
+            s_gen = np.sqrt(p_gen**2 + bus_gen_q.get(n, 0.0) ** 2)
+            if has_gen and s_gen > 0:
+                sub.nodes[n]["pf_gen"] = abs(p_gen) / s_gen
 
         feeders.append(sub)
 

@@ -200,6 +200,43 @@ def compare_feeders(
     return results
 
 
+def feeder_counts(G: nx.Graph) -> Dict[str, float]:
+    """Plain numbers that describe a feeder: how many cables, switches, load and generation buses, and the cable lengths.
+
+    A *load bus* has positive net power, a *generation bus* negative net power (generation larger than load).
+    """
+    kinds = [d.get("edge_type", "line") for *_, d in G.edges(data=True)]
+    power = np.array([G.nodes[n].get("P_mw", 0.0) for n in G.nodes])
+    lengths = np.array([d["length_km"] for *_, d in G.edges(data=True)
+                        if d.get("edge_type", "line") == "line" and "length_km" in d]) * 1000.0     # metres
+    return {
+        "buses": G.number_of_nodes(),
+        "cables": kinds.count("line"),
+        "switches": kinds.count("switch"),
+        "load buses": int((power > 0).sum()),
+        "generation buses": int((power < 0).sum()),
+        "total load (MW)": float(power[power > 0].sum()),
+        "total generation (MW)": float(-power[power < 0].sum()),
+        "total cable length (km)": float(lengths.sum() / 1000.0) if len(lengths) else 0.0,
+        "median cable (m)": float(np.median(lengths)) if len(lengths) else 0.0,
+        "90th percentile cable (m)": float(np.percentile(lengths, 90)) if len(lengths) else 0.0,
+        "longest cable (m)": float(lengths.max()) if len(lengths) else 0.0,
+    }
+
+
+def compare_cable_lengths(synthetic: nx.Graph, reference: nx.Graph) -> float:
+    """Kolmogorov-Smirnov distance between the cable lengths of two feeders: 0 = identical, 1 = completely different.
+
+    More robust than the KL divergence of ``compare_feeders`` when the reference has only a few cables: the KL histogram has
+    many empty bins in the long tail, and every synthetic cable that falls into one of them is punished very strongly.
+    """
+    def lengths(G):
+        return [d["length_km"] for *_, d in G.edges(data=True) if d.get("edge_type", "line") == "line" and "length_km" in d]
+
+    a, b = lengths(synthetic), lengths(reference)
+    return float(stats.ks_2samp(a, b).statistic) if a and b else float("nan")
+
+
 def validate_tree(G: nx.Graph) -> List[str]:
     """Check structural validity of a feeder and return list of issues."""
     issues: List[str] = []

@@ -72,3 +72,9 @@ docs/bin
 program.md
 report_status_*.md
 workplan.md
+
+# Docker / local settings and data that must never be committed
+.env
+enel_data/
+output/report_rows.json
+output/*.html

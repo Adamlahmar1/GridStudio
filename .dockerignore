@@ -1,6 +1,11 @@
 # Only what the image needs goes into the build context
 *
 !powergrid_synth
+!feeder_pipeline
 !pipeline.py
+!compare_real_fake.py
+!gridstudio.py
 !requirements-docker.txt
+!tests
 **/__pycache__
+**/*.pyc

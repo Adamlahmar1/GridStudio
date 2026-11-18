@@ -58,6 +58,8 @@ class SchweetzerFeederGenerator:
         v_nom_kv: float = 10.0,
         assign_cable_types: bool = True,
         assign_cable_lengths: bool = True,
+        design_load_mw: Optional[float] = None,
+        design_gen_mw: Optional[float] = None,
     ) -> nx.Graph:
         """Generate a complete MV distribution feeder.
 
@@ -76,6 +78,13 @@ class SchweetzerFeederGenerator:
         assign_cable_lengths : bool, optional
             Whether to run Step 5 (cable length and impedance assignment).
             Default True.
+        design_load_mw : float, optional
+            Total load (MW) the cables are sized for. Default ``None``: the cables are sized for the net power
+            (load minus generation) at the average load, as in the original paper. If given, the cables are sized for
+            the load alone, scaled up so that it sums to ``design_load_mw`` (the busiest moment, without generation).
+        design_gen_mw : float, optional
+            Only used together with ``design_load_mw``. Second sizing case: the generation alone, scaled so that it sums
+            to ``design_gen_mw`` (the sunniest moment). Every cable is then sized for the larger of the two currents.
 
         Returns
         -------
@@ -98,7 +107,7 @@ class SchweetzerFeederGenerator:
 
         # Step 4: assign cable types (optional)
         if assign_cable_types:
-            self._assign_cable_types(G, v_nom_kv)
+            self._assign_cable_types(G, v_nom_kv, design_load_mw, design_gen_mw)
 
         # Step 5: assign cable lengths and compute impedance (optional)
         if assign_cable_lengths:
@@ -249,6 +258,10 @@ class SchweetzerFeederGenerator:
             G.nodes[n]["P_mw"] = 0.0
             G.nodes[n]["Q_mvar"] = 0.0
 
+        if p.load_hops is not None or p.injection_hops is not None:
+            self._assign_from_reference(G, total_load_mw, total_gen_mw)
+            return
+
         # 3a: Intermediate nodes
         self._assign_intermediate(G)
 
@@ -258,6 +271,87 @@ class SchweetzerFeederGenerator:
 
         # 3c: Load (consumption) nodes
         self._assign_load(G, total_load_mw)
+
+    def _assign_from_reference(
+        self, G: nx.Graph, total_load_mw: float, total_gen_mw: float
+    ) -> None:
+        """Place generation and load nodes at the positions measured on the reference feeder, with its sizes.
+
+        Used when the parameters carry ``load_hops`` / ``injection_hops`` (see ``fit_params_from_feeders``). The
+        numbers of intermediate, generation and load nodes are drawn as before; what changes is WHERE the power nodes
+        sit (the algorithm of the paper fills the intermediate nodes first, which pushes all power nodes to the far end
+        of the feeder) and how the total is split between them (the largest node can take most of the total).
+        """
+        p = self.params
+        n_total = G.number_of_nodes()
+        frac_int = stats.beta.rvs(
+            p.intermediate_frac.alpha, p.intermediate_frac.beta, random_state=self.rng)
+        n_int = max(1, round(n_total * frac_int))
+        n_inj = 0
+        if total_gen_mw > 0:
+            frac_inj = stats.beta.rvs(
+                p.injection_frac.alpha, p.injection_frac.beta, random_state=self.rng)
+            n_inj = max(1, round(n_total * frac_inj))
+        n_load = max(0, n_total - n_int - n_inj)
+
+        available = [n for n in G.nodes if n != 0]          # the source stays an intermediate node
+        inj_nodes = self._place_at_hops(G, available, n_inj, p.injection_hops)
+        load_nodes = self._place_at_hops(G, available, n_load, p.load_hops)
+        for n in G.nodes:
+            G.nodes[n]["node_type"] = "intermediate"
+        for nodes, kind, total, ref_shares, ref_pfs, sign in (
+            (inj_nodes, "injection", total_gen_mw, p.injection_shares, p.injection_pfs, -1.0),
+            (load_nodes, "load", total_load_mw, p.load_shares, p.load_pfs, 1.0),
+        ):
+            shares, pfs = self._reference_shares(len(nodes), ref_shares, ref_pfs)
+            for i, n in enumerate(nodes):
+                P = sign * total * shares[i]
+                if pfs is not None:
+                    G.nodes[n]["pf"] = pfs[i]
+                G.nodes[n]["node_type"] = kind
+                G.nodes[n]["P_mw"] = P
+                G.nodes[n]["Q_mvar"] = P * math.tan(math.acos(G.nodes[n]["pf"]))
+
+    def _place_at_hops(self, G: nx.Graph, available: List[int], k: int, hops) -> List[int]:
+        """Take k nodes out of ``available``, each close to a hop distance drawn from ``hops`` (fractions of the maximum)."""
+        max_h = max(G.nodes[n]["h"] for n in G.nodes)
+        chosen: List[int] = []
+        for _ in range(k):
+            if not available:
+                break
+            if hops:
+                target = int(round(float(self.rng.choice(hops)) * max_h))
+                gap = min(abs(G.nodes[n]["h"] - target) for n in available)
+                candidates = [n for n in available if abs(G.nodes[n]["h"] - target) == gap]
+            else:
+                candidates = available
+            node = candidates[int(self.rng.integers(len(candidates)))]
+            chosen.append(node)
+            available.remove(node)
+        return chosen
+
+    def _reference_shares(self, n: int, ref_shares, ref_pfs=None):
+        """Shares of the total (sum 1) and power factors for n nodes, in random order, taken from the reference.
+
+        ``ref_shares`` are sorted largest first and ``ref_pfs`` (optional) belong to the same nodes. With fewer nodes
+        than the reference the largest reference nodes are kept; with more, the extra nodes get the median share and
+        median power factor. Without reference shares the total is split equally. Returns (shares, pfs); pfs is None
+        when no reference power factors are given."""
+        if n == 0:
+            return np.array([]), None
+        if not ref_shares:
+            return np.full(n, 1.0 / n), None
+        order = np.argsort(-np.asarray(ref_shares, dtype=float), kind="stable")
+        s = np.asarray(ref_shares, dtype=float)[order]
+        extra = max(n - len(s), 0)
+        shares = np.concatenate([s[:n], np.full(extra, np.median(s))])
+        pfs = None
+        if ref_pfs:
+            f = np.asarray(ref_pfs, dtype=float)[order]
+            pfs = np.concatenate([f[:n], np.full(extra, np.median(f))])
+        shares = shares / shares.sum()
+        perm = self.rng.permutation(n)
+        return shares[perm], (pfs[perm] if pfs is not None else None)
 
     def _assign_intermediate(self, G: nx.Graph) -> None:
         """Mark a fraction of nodes as intermediate (zero load)."""
@@ -394,14 +488,20 @@ class SchweetzerFeederGenerator:
     # Step 4: Cable type assignment
     # ------------------------------------------------------------------
 
-    def _assign_cable_types(self, G: nx.Graph, v_nom_kv: float) -> None:
+    def _assign_cable_types(
+        self,
+        G: nx.Graph,
+        v_nom_kv: float,
+        design_load_mw: Optional[float] = None,
+        design_gen_mw: Optional[float] = None,
+    ) -> None:
         """Assign cable types from the library using I_est / I_nom ratio."""
         p = self.params
         library = p.cable_library
         threshold = p.current_threshold
 
         # Compute downstream power for each node (tree traversal)
-        downstream = self._compute_downstream_power(G)
+        downstream = self._compute_downstream_power(G, design_load_mw, design_gen_mw)
 
         # Process edges from furthest to closest
         edges_sorted = sorted(
@@ -439,6 +539,8 @@ class SchweetzerFeederGenerator:
                     # Sample I_est/I_nom from Exponential, solve for I_nom
                     ratio = self.rng.exponential(p.current_ratio.mu)
                     ratio = max(ratio, 0.01)  # avoid division by zero
+                    if p.current_ratio_cap is not None:
+                        ratio = min(ratio, p.current_ratio_cap)
                     i_nom_target = I_est_a / ratio
                     cable = self._pick_cable_by_capacity(
                         i_nom_target, h, library, threshold
@@ -449,6 +551,7 @@ class SchweetzerFeederGenerator:
 
             G.edges[u, v]["cable_type"] = cable.name
             G.edges[u, v]["max_i_ka"] = cable.max_i_ka
+            G.edges[u, v]["c_nf_per_km"] = cable.c_nf_per_km
             G.edges[u, v]["r_per_km"] = cable.r_ohm_per_km
             G.edges[u, v]["x_per_km"] = cable.x_ohm_per_km
             G.edges[u, v]["I_est_ka"] = I_est
@@ -475,15 +578,33 @@ class SchweetzerFeederGenerator:
         best = min(filtered, key=lambda c: abs(c.max_i_ka - target_ka))
         return best
 
-    def _compute_downstream_power(self, G: nx.Graph) -> Dict[int, float]:
+    def _compute_downstream_power(
+        self,
+        G: nx.Graph,
+        design_load_mw: Optional[float] = None,
+        design_gen_mw: Optional[float] = None,
+    ) -> Dict[int, float]:
         """Compute total downstream apparent power for each node.
 
-        Returns dict mapping node → downstream S (MVA).
+        Returns dict mapping node → downstream S (MVA). With ``design_load_mw`` only the load nodes count, scaled so
+        that they sum to ``design_load_mw``. If ``design_gen_mw`` is also given, a second case is evaluated in which
+        only the generation nodes count, scaled so that they sum to ``design_gen_mw``, and every node gets the larger
+        of the two downstream powers.
         """
+        scale = scale_gen = None
+        if design_load_mw is not None:
+            total_load = sum(max(G.nodes[n].get("P_mw", 0.0), 0.0) for n in G.nodes)
+            scale = design_load_mw / total_load if total_load > 0 else 1.0
+            if design_gen_mw is not None:
+                total_gen = sum(max(-G.nodes[n].get("P_mw", 0.0), 0.0) for n in G.nodes)
+                scale_gen = design_gen_mw / total_gen if total_gen > 0 else None
         downstream: Dict[int, float] = {}
+        downstream_gen: Dict[int, float] = {}
         # Process leaves first, then work toward root
         for n in sorted(G.nodes, key=lambda n: -G.nodes[n]["h"]):
             P = G.nodes[n].get("P_mw", 0.0)
+            if scale is not None:
+                P = max(P, 0.0) * scale
             Q = G.nodes[n].get("Q_mvar", 0.0)
             # Add children's downstream power
             children = [
@@ -494,6 +615,11 @@ class SchweetzerFeederGenerator:
             # Store as apparent power magnitude
             total_P = P + child_P
             downstream[n] = total_P
+            if scale_gen is not None:
+                P_gen = max(-G.nodes[n].get("P_mw", 0.0), 0.0) * scale_gen
+                downstream_gen[n] = P_gen + sum(downstream_gen.get(c, 0.0) for c in children)
+        if scale_gen is not None:
+            downstream = {n: max(abs(downstream[n]), downstream_gen[n]) for n in downstream}
         return downstream
 
     # ------------------------------------------------------------------

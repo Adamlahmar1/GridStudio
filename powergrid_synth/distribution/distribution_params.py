@@ -11,7 +11,7 @@ into a single configuration object.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +193,25 @@ class DistributionSynthParams:
         default_factory=TLocationScaleParams
     )
 
+    # Optional: positions and sizes measured on ONE reference feeder (set by fit_params_from_feeders(single_reference=True)).
+    # Positions are hop distances divided by the largest hop distance of the feeder; sizes are shares of the total
+    # load / generation, largest first. When set, the generator places the load and generation nodes first (at
+    # positions drawn from these lists) and fills the rest with intermediate nodes. None = the algorithm of the paper.
+    load_hops: Optional[List[float]] = None
+    injection_hops: Optional[List[float]] = None
+    load_shares: Optional[List[float]] = None
+    injection_shares: Optional[List[float]] = None
+    load_pfs: Optional[List[float]] = None          # power factor of the node behind each entry of load_shares
+    injection_pfs: Optional[List[float]] = None     # same for the generation (power factor of the generators of the bus)
+
     # Step 4: Cable type
     cable_library: List[CableLibraryEntry] = field(
         default_factory=lambda: list(DEFAULT_CABLE_LIBRARY)
     )
     current_ratio: ExponentialParams = field(default_factory=ExponentialParams)
+    # Optional upper limit of the drawn I_est / I_nom ratio (None = the exponential draw is not limited, so a cable can
+    # be drawn smaller than the current it has to carry). A reference feeder has no cable above its rating.
+    current_ratio_cap: Optional[float] = None
     current_threshold: CurrentThreshold = field(
         default_factory=CurrentThreshold
     )

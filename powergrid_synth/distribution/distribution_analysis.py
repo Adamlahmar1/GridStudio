@@ -281,8 +281,60 @@ def fit_power_law_clip(
 # High-level fitting
 # ------------------------------------------------------------------
 
+def _measured_beta(fraction: float, concentration: float = 5000.0) -> BetaParams:
+    """Beta distribution with the given mean and a narrow spread (a 'measured value' that the generator can sample).
+    With 500 the number of load buses of a feeder with some hundred buses varied by about +-4 around the measured value;
+    with 5000 it varies by about +-1.5."""
+    f = min(max(float(fraction), 0.005), 0.995)
+    return BetaParams(alpha=f * concentration, beta=(1.0 - f) * concentration)
+
+
+def _net_export_fractions(feeders: Sequence[nx.Graph]) -> np.ndarray:
+    """Fraction of nodes with negative net power (generation larger than load), per feeder."""
+    fracs = []
+    for G in feeders:
+        n = G.number_of_nodes()
+        n_exp = sum(1 for nd in G.nodes if G.nodes[nd].get("P_mw", 0.0) < 0)
+        fracs.append(n_exp / n if n > 0 else 0.0)
+    return np.array(fracs)
+
+
+def _injection_deviations(feeders: Sequence[nx.Graph]) -> np.ndarray:
+    """Deviations of the generation of each exporting node from a uniform share (same definition as for loads)."""
+    devs = []
+    for G in feeders:
+        exp = [abs(G.nodes[n]["P_mw"]) for n in G.nodes if G.nodes[n].get("P_mw", 0.0) < 0]
+        total = sum(exp)
+        if not exp or total <= 0:
+            continue
+        uniform = total / len(exp)
+        devs.extend((p - uniform) / total for p in exp)
+    return np.array(devs)
+
+
+def _power_node_positions_and_shares(feeders: Sequence[nx.Graph], sign: float):
+    """Positions (hop distance / largest hop distance of the feeder), shares of the total and power factors of the nodes
+    whose net power has the given sign (+1 consumers, -1 exporters). Shares and power factors are sorted by share,
+    largest first, so that entry i of both lists describes the same node."""
+    hops, powers, pfs = [], [], []
+    for G in feeders:
+        h_max = max((G.nodes[n]["h"] for n in G.nodes), default=0)
+        for n in G.nodes:
+            p = G.nodes[n].get("P_mw", 0.0)
+            if p * sign > 0 and h_max > 0:
+                hops.append(G.nodes[n]["h"] / h_max)
+                powers.append(abs(p))
+                pfs.append(G.nodes[n].get("pf" if sign > 0 else "pf_gen"))      # generation: its own power factor
+    total = sum(powers)
+    order = sorted(range(len(powers)), key=lambda i: -powers[i]) if total > 0 else []
+    if any(f is None for f in pfs):                       # power factor not available for every node: do not use it
+        return hops, [powers[i] / total for i in order], []
+    return hops, [powers[i] / total for i in order], [float(pfs[i]) for i in order]
+
+
 def fit_params_from_feeders(
     feeders: Sequence[nx.Graph],
+    single_reference: bool = False,
 ) -> DistributionSynthParams:
     """Fit all Schweitzer parameters from a collection of reference feeders.
 
@@ -291,6 +343,17 @@ def fit_params_from_feeders(
     feeders : sequence of nx.Graph
         Reference distribution feeder graphs, each annotated with
         ``h``, ``P_mw``, ``node_type``, ``length_km`` attributes.
+    single_reference : bool, default False
+        Use this when there is only ONE reference feeder. With a single feeder the shares of empty nodes and of
+        generation nodes cannot be fitted as distributions and silently fall back to defaults that come from the Dutch
+        dataset of the original paper. With ``single_reference=True`` the measured values of the reference are used
+        instead: the share of empty nodes, the share of generation nodes (nodes with negative net power), the split of
+        the generation between them, and one constant cut-off for the cable length (the longest measured cable).
+        It also records WHERE the load and generation nodes sit along the feeder and how large their shares are
+        (``load_hops``, ``injection_hops``, ``load_shares``, ``injection_shares``) and their power factors
+        (``load_pfs``, loads only): the generator then places them at these positions, splits the totals in these
+        proportions and gives the loads these power factors, instead of the defaults of the paper (which put all power
+        nodes at the far end, spread the power evenly and use the power factors of the Dutch dataset). The default (False) keeps the previous behaviour.
 
     Returns
     -------
@@ -314,4 +377,21 @@ def fit_params_from_feeders(
         cable_length=fit_modified_cauchy(lengths) if len(lengths) > 0 else ModifiedCauchyParams(),
         length_clip=fit_exponential_clip(feeders),
     )
+    if single_reference:
+        params.intermediate_frac = _measured_beta(float(np.mean(int_frac)))
+        params.injection_frac = _measured_beta(float(np.mean(_net_export_fractions(feeders))))
+        inj_dev = _injection_deviations(feeders)
+        if len(inj_dev) >= 3:
+            params.injection_deviation = NormalParams(mu=float(inj_dev.mean()), sigma=float(inj_dev.std()))
+        if len(lengths) >= 3:
+            # The fitted maximum length per hop is unreliable when most connections are switches (few cables per hop).
+            # Use one constant cut-off for all hops instead: the longest measured cable.
+            params.length_clip = ExponentialClip(a=float(np.max(lengths)), b=0.0)
+        params.load_hops, params.load_shares, params.load_pfs = _power_node_positions_and_shares(feeders, +1.0)
+        # the generation uses its own power factor ("pf_gen", from the reactive power of the sgens); the "pf" of a bus belongs
+        # to its LOAD and says nothing about the generation of an exporting bus
+        params.injection_hops, params.injection_shares, params.injection_pfs = _power_node_positions_and_shares(feeders, -1.0)
+        # an empty list (the reference has no such nodes) means "not measured": keep the paper's behaviour for it
+        for name in ("load_hops", "load_shares", "load_pfs", "injection_hops", "injection_shares", "injection_pfs"):
+            setattr(params, name, getattr(params, name) or None)
     return params
