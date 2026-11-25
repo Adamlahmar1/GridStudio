@@ -1,9 +1,9 @@
 # Author: Adam Lahmar <adam.lahmar@rwth-aachen.de>
 """
-Wire real, measured power magnitudes from the ENEL 5-minute time-series
+Wire real, measured power magnitudes from the Italian DSO 5-minute time-series
 exports into a static pandapower snapshot's load/sgen tables.
 
-The static ENEL network export has every load/sgen ``p_mw`` at 0 -- the
+The static Italian DSO network export has every load/sgen ``p_mw`` at 0 -- the
 real magnitudes live in separate CSVs, keyed by each device's
 ``agui_cod`` (its pod or transformer identifier), not by pandapower row
 index. Two source files carry the numbers:
@@ -113,7 +113,7 @@ def peak_operating_points(net, timeseries_dir: Path, outlier_factor: float = 1.5
 
 def apply_real_power_snapshot(net, timeseries_dir: Path) -> None:
     """Overwrite ``net.load``/``net.sgen`` ``p_mw``/``q_mvar`` in place with
-    annual-mean real values from the ENEL time-series exports."""
+    annual-mean real values from the Italian DSO time-series exports."""
     timeseries_dir = Path(timeseries_dir)
     load_wide = pd.read_csv(timeseries_dir / "load_timeseries_5min.csv")
     trafo_wide = pd.read_csv(timeseries_dir / "transformer_timeseries_5min.csv")

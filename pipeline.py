@@ -36,7 +36,7 @@ from powergrid_synth.distribution.distribution_validation import (
     validate_tree,
 )
 
-DEFAULT_ENEL_DATA_DIR = "ENEL_grid_data"
+DEFAULT_ITALIAN_DSO_DATA_DIR = "Italian_DSO_grid_data"
 NET_SUBPATH = Path("ppnet_DW00.1.382280-VE_202412") / "ppnet_DW00.1.382280-VE_202412.json"
 
 
@@ -44,11 +44,11 @@ def parse_args():
     # Paths and seed are configurable so the same script runs locally and inside
     # the Docker container (where the data is mounted at /data, output at /output).
     parser = argparse.ArgumentParser(
-        description="ENEL distribution feeder: reference-based synthesis and validation")
+        description="Italian DSO distribution feeder: reference-based synthesis and validation")
     parser.add_argument(
-        "--enel-data-dir", default=os.environ.get("ENEL_DATA_DIR", DEFAULT_ENEL_DATA_DIR),
+        "--italian-dso-data-dir", default=os.environ.get("ITALIAN_DSO_DATA_DIR", DEFAULT_ITALIAN_DSO_DATA_DIR),
         help="folder containing ppnet_DW00.1.382280-VE_202412/ and timeseries_data/ "
-             "(environment variable: ENEL_DATA_DIR)")
+             "(environment variable: ITALIAN_DSO_DATA_DIR)")
     parser.add_argument(
         "--output-dir", default=os.environ.get("OUTPUT_DIR", "output"),
         help="folder the generated feeder is saved to (environment variable: OUTPUT_DIR)")
@@ -71,28 +71,28 @@ def parse_args():
              "the cable types of the real network")
     parser.add_argument(
         "--no-map", action="store_true",
-        help="do not write the interactive map (synthetic_enel_map.html: the real and the synthetic feeder side by side)")
+        help="do not write the interactive map (synthetic_italian_dso_map.html: the real and the synthetic feeder side by side)")
     return parser.parse_args()
 
 
 def main(args):
-    data_dir = Path(args.enel_data_dir)
+    data_dir = Path(args.italian_dso_data_dir)
     real_net_path = data_dir / NET_SUBPATH
     timeseries_dir = data_dir / "timeseries_data"
 
     if not real_net_path.exists():
         raise SystemExit(
-            f"ENEL network file not found: {real_net_path}\n"
-            "The ENEL data is not part of this repository or the Docker image. Point the pipeline at the folder "
-            "that contains ppnet_DW00.1.382280-VE_202412/ and timeseries_data/ with --enel-data-dir "
+            f"Italian DSO network file not found: {real_net_path}\n"
+            "The Italian DSO data is not part of this repository or the Docker image. Point the pipeline at the folder "
+            "that contains ppnet_DW00.1.382280-VE_202412/ and timeseries_data/ with --italian-dso-data-dir "
             "(or mount it at /data when using Docker: -v <folder>:/data:ro).")
 
     print("==================================================")
-    print(" ENEL Distribution Feeder: Reference-Based Synthesis")
+    print(" Italian DSO Distribution Feeder: Reference-Based Synthesis")
     print("==================================================")
 
-    # --- STEP 1: LOAD THE REAL ENEL GRID ---
-    print("\n[Step 1/8] Loading real ENEL pandapower network...")
+    # --- STEP 1: LOAD THE REAL Italian DSO GRID ---
+    print("\n[Step 1/8] Loading real Italian DSO pandapower network...")
     net = pp.from_json(str(real_net_path))
     print(f" Loaded: {len(net.bus)} buses, {len(net.line)} lines, "
           f"{len(net.switch)} switches, {len(net.trafo)} transformer(s), "
@@ -169,7 +169,7 @@ def main(args):
               f"{sum(1 for *_, d in real_feeder.edges(data=True) if d.get('edge_type') == 'switch')} switches).")
 
     # --- STEP 5: VALIDATE THE FAKE FEEDER AGAINST THE REAL ONE ---
-    print("\n[Step 5/8] Validating synthetic feeder against real ENEL feeder...")
+    print("\n[Step 5/8] Validating synthetic feeder against real Italian DSO feeder...")
     issues = validate_tree(synthetic_feeder)
     if issues:
         print(f" Structural issues: {issues}")
@@ -215,7 +215,7 @@ def main(args):
     print("\n[Step 7/8] Saving synthetic feeder...")
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "synthetic_enel_feeder.json"
+    output_path = output_dir / "synthetic_italian_dso_feeder.json"
     synthetic_net = feeder_to_pandapower(synthetic_feeder)
     if not args.feeder_only:
         equipment = upstream_from_net(net)       # transformer and source voltage of the real network
@@ -238,7 +238,7 @@ def main(args):
         print("\n[Step 8/8] Writing the interactive map (real and synthetic feeder side by side)...")
         try:
             map_path = write_feeder_map(
-                net, synthetic_net, output_dir / "synthetic_enel_map.html", timeseries_dir=timeseries_dir,
+                net, synthetic_net, output_dir / "synthetic_italian_dso_map.html", timeseries_dir=timeseries_dir,
                 real_name=f"Real feeder ({real_net_path.stem})", synthetic_name=f"Synthetic feeder (seed {args.seed})")
             print(f" Saved to {map_path.resolve()} (one self-contained page: open it in a web browser; it contains your feeder data)")
         except Exception as exc:                      # the map is an extra: never let it stop the pipeline

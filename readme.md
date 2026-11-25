@@ -11,17 +11,17 @@ A Python package for generating realistic **synthetic power grids** at both the 
 
 Synthesised grids can be **exported to 12+ industry-standard formats** via [pandapower](https://www.pandapower.org/) and [pypowsybl](https://pypowsybl.readthedocs.io/) and validated with **DC and AC power-flow solvers** from both libraries.
 
-## ENEL feeder pipeline (run with Docker, nothing to install)
+## Italian DSO feeder pipeline (run with Docker, nothing to install)
 
-This repository also contains a pipeline that builds a **synthetic version of a real ENEL medium-voltage feeder** (reference-based synthesis, with the upstream transformer, breaker and
+This repository also contains a pipeline that builds a **synthetic version of a real Italian DSO medium-voltage feeder** (reference-based synthesis, with the upstream transformer, breaker and
 switches of the real network) and writes an **interactive map page** that shows the real and the synthetic feeder side by side. It runs in Docker, so nothing has to be installed except Docker:
 
 ```bash
-docker build -t gridstudio-enel .
-docker run --rm -v "<ENEL data folder>:/data:ro" -v "<output folder>:/output" gridstudio-enel
+docker build -t gridstudio-italian-dso .
+docker run --rm -v "<Italian DSO data folder>:/data:ro" -v "<output folder>:/output" gridstudio-italian-dso
 ```
 
-The results (`synthetic_enel_feeder.json` and `synthetic_enel_map.html`) are written to the output folder. The ENEL data is provided by ENEL and is not part of this repository.
+The results (`synthetic_italian_dso_feeder.json` and `synthetic_italian_dso_map.html`) are written to the output folder. The Italian DSO data is provided by the Italian DSO and is not part of this repository.
 All commands, options and troubleshooting: **[DOCKER.md](DOCKER.md)**.
 
 ## Documentation

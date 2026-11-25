@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .loaders import load_enel
+from .loaders import load_italian_dso
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,6 @@ class FeederConfig:
 
 
 FEEDERS = {
-    # ENEL: all options at the tool's defaults -> identical to pipeline.py
-    "enel": FeederConfig("enel", load_enel, "ENEL_DATA_DIR", "data/enel"),
+    # Italian DSO: all options at the tool's defaults -> identical to pipeline.py
+    "italian_dso": FeederConfig("italian_dso", load_italian_dso, "ITALIAN_DSO_DATA_DIR", "data/italian_dso"),
 }

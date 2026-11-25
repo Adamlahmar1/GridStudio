@@ -8,26 +8,26 @@
 #   docker compose run --rm test            automated tests (no data needed)
 #
 # Settings (optional, in a file called .env next to this file, see .env.example):
-#   ENEL_DATA_DIR   folder with ppnet_DW00.1.382280-VE_202412/ and timeseries_data/   (default ./enel_data)
+#   ITALIAN_DSO_DATA_DIR   folder with ppnet_DW00.1.382280-VE_202412/ and timeseries_data/   (default ./italian_dso_data)
 #   OUTPUT_DIR      where the results are written                                      (default ./output)
 
 name: gridstudio
 
 x-gridstudio: &gridstudio
   build: .
-  image: gridstudio-enel
+  image: gridstudio-italian-dso
   profiles: ["tools"]              # started only by "docker compose run", never by "docker compose up"
 
 services:
   pipeline:
     <<: *gridstudio
     command: ["pipeline"]
-    volumes: ["${ENEL_DATA_DIR:-./enel_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
+    volumes: ["${ITALIAN_DSO_DATA_DIR:-./italian_dso_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
 
   compare:
     <<: *gridstudio
     command: ["compare", "--seeds", "10", "--out", "/output/report_rows.json"]
-    volumes: ["${ENEL_DATA_DIR:-./enel_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
+    volumes: ["${ITALIAN_DSO_DATA_DIR:-./italian_dso_data}:/data:ro", "${OUTPUT_DIR:-./output}:/output"]
 
   test:
     <<: *gridstudio

@@ -12,16 +12,16 @@ from powergrid_synth.distribution.distribution_timeseries import apply_real_powe
 
 from .reference import Reference
 
-# ----------------------------------------------------------------------------------------------- ENEL
-ENEL_NET = Path("ppnet_DW00.1.382280-VE_202412") / "ppnet_DW00.1.382280-VE_202412.json"
-ENEL_DAY = "2024-07-15"          # mid-summer day: solar generation clearly visible
+# ----------------------------------------------------------------------------------------------- Italian DSO
+ITALIAN_DSO_NET = Path("ppnet_DW00.1.382280-VE_202412") / "ppnet_DW00.1.382280-VE_202412.json"
+ITALIAN_DSO_DAY = "2024-07-15"          # mid-summer day: solar generation clearly visible
 
 
 def _clip(series: pd.Series, keep_positive: bool) -> pd.Series:
     return (series if keep_positive else -series).clip(lower=0.0)
 
 
-def _enel_day(net, ts_dir: Path, day: str):
+def _italian_dso_day(net, ts_dir: Path, day: str):
     """Total load and generation of one real day, 5-minute steps (sum over all devices of the load and generation columns)."""
     load_w = pd.read_csv(ts_dir / "load_timeseries_5min.csv", parse_dates=["time"])
     trafo_w = pd.read_csv(ts_dir / "transformer_timeseries_5min.csv", parse_dates=["time"])
@@ -38,8 +38,8 @@ def _enel_day(net, ts_dir: Path, day: str):
     return list(zip(epochs, load.tolist(), gen.tolist()))
 
 
-def load_enel(data_dir) -> Reference:
+def load_italian_dso(data_dir) -> Reference:
     d = Path(data_dir)
-    net = pp.from_json(str(d / ENEL_NET))
+    net = pp.from_json(str(d / ITALIAN_DSO_NET))
     apply_real_power_snapshot(net, d / "timeseries_data")      # the file has p_mw = 0, real values come from the time series
-    return Reference("enel", net, v_nom_kv=20.0, day=_enel_day(net, d / "timeseries_data", ENEL_DAY), has_ratings=True)
+    return Reference("italian_dso", net, v_nom_kv=20.0, day=_italian_dso_day(net, d / "timeseries_data", ITALIAN_DSO_DAY), has_ratings=True)

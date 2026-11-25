@@ -9,7 +9,7 @@ One entry point for the repository (the entry point of the Docker image; it also
     python gridstudio.py help                   this text
 
 Anything that is not a command is passed on to the pipeline, so `gridstudio.py --seed 7` works like `pipeline.py --seed 7`.
-Paths: the ENEL data folder is read from ENEL_DATA_DIR (Docker: /data), results are written to OUTPUT_DIR (Docker: /output).
+Paths: the Italian DSO data folder is read from ITALIAN_DSO_DATA_DIR (Docker: /data), results are written to OUTPUT_DIR (Docker: /output).
 """
 import os
 import subprocess

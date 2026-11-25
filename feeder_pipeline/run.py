@@ -1,9 +1,9 @@
 # Author: Adam Lahmar <adam.lahmar@rwth-aachen.de>
 """Generic pipeline for any registered feeder.
 
-    python -m feeder_pipeline.run enel --data-dir <ENEL folder>
-    python -m feeder_pipeline.run enel --data-dir <ENEL folder> --seeds 10
-    python -m feeder_pipeline.run enel --data-dir <ENEL folder> --day
+    python -m feeder_pipeline.run italian_dso --data-dir <Italian DSO folder>
+    python -m feeder_pipeline.run italian_dso --data-dir <Italian DSO folder> --seeds 10
+    python -m feeder_pipeline.run italian_dso --data-dir <Italian DSO folder> --day
 
 Steps (same as pipeline.py): load reference -> convert to feeder graph -> fit parameters -> generate synthetic feeder ->
 statistical validation -> electrical validation -> save; optionally a comparison over one real day (--day).

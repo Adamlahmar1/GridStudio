@@ -5,7 +5,7 @@
 * refit_length           : refit the cable-length distribution as a TRUNCATED Cauchy (the sampler cannot draw lengths > 10 m)
 * FrequencyPickGenerator : draw the cable type by the `frequency` of the library entries (the comment in the original code
                            describes this, but the original code only looks at the closest current rating)
-All three are switched on or off per feeder in config.py. The ENEL profile uses none of them, so ENEL is unchanged.
+All three are switched on or off per feeder in config.py. The Italian DSO profile uses none of them, so Italian DSO is unchanged.
 """
 from __future__ import annotations
 

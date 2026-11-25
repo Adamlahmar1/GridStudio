@@ -2,7 +2,7 @@
 """
 Interactive map of a real and a synthetic feeder side by side (one self-contained HTML page).
 
-    write_feeder_map(real_net, synthetic_net, "output/synthetic_enel_map.html", timeseries_dir=...)
+    write_feeder_map(real_net, synthetic_net, "output/synthetic_italian_dso_map.html", timeseries_dir=...)
 
 The page shows both networks (switch in the page) with the equipment drawn explicitly
 

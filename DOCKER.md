@@ -4,14 +4,14 @@
 The Docker image contains Python 3.12 and every package the pipeline needs, so **nothing has to be installed on your computer except Docker**.
 One command does the whole chain:
 
-real ENEL feeder → measured power wired in → parameters fitted → synthetic feeder generated → statistical validation → electrical validation (AC power flow)
+real Italian DSO feeder → measured power wired in → parameters fitted → synthetic feeder generated → statistical validation → electrical validation (AC power flow)
 → synthetic feeder saved → **interactive map of the real and the synthetic feeder written**.
 
 ## 1. What you need
 
 * **Docker Desktop** (Windows, macOS) or Docker Engine (Linux), running. Check with `docker --version`.
 * **This repository** (clone or download it).
-* **The ENEL data**: the folder that contains `ppnet_DW00.1.382280-VE_202412/` and `timeseries_data/`. It is provided by ENEL and is **not** part of the
+* **The Italian DSO data**: the folder that contains `ppnet_DW00.1.382280-VE_202412/` and `timeseries_data/`. It is provided by the Italian DSO and is **not** part of the
   repository or of the image. It is mounted read-only at `/data`; nothing is written to it.
 
 ## 2. Build the image (once)
@@ -19,7 +19,7 @@ real ENEL feeder → measured power wired in → parameters fitted → synthetic
 In a terminal **in the repository folder** (the one that contains the `Dockerfile`):
 
 ```bash
-docker build -t gridstudio-enel .
+docker build -t gridstudio-italian-dso .
 ```
 
 ## 3. Run it
@@ -30,15 +30,15 @@ PowerShell (Windows):
 
 ```powershell
 docker run --rm `
-  -v "C:\path\to\ENEL_grid_data:/data:ro" `
+  -v "C:\path\to\Italian_DSO_grid_data:/data:ro" `
   -v "${PWD}\output:/output" `
-  gridstudio-enel
+  gridstudio-italian-dso
 ```
 
 Linux / macOS:
 
 ```bash
-docker run --rm -v /path/to/ENEL_grid_data:/data:ro -v "$PWD/output:/output" gridstudio-enel
+docker run --rm -v /path/to/Italian_DSO_grid_data:/data:ro -v "$PWD/output:/output" gridstudio-italian-dso
 ```
 
 The run takes about a minute and prints the eight steps of the pipeline (structure of the real feeder, fitted parameters, comparison of the synthetic with the real
@@ -50,8 +50,8 @@ Everything is written to the `output` folder (the folder you mounted at `/output
 
 | File | What it is |
 |---|---|
-| **`synthetic_enel_map.html`** | **Open this in a web browser** (double-click it, or `start output\synthetic_enel_map.html` in PowerShell). One self-contained page, no server and no internet needed. |
-| `synthetic_enel_feeder.json` | The synthetic feeder as a pandapower network (`pandapower.from_json`): grid connection, transformer, breaker, cables and switches, loads and generators. |
+| **`synthetic_italian_dso_map.html`** | **Open this in a web browser** (double-click it, or `start output\synthetic_italian_dso_map.html` in PowerShell). One self-contained page, no server and no internet needed. |
+| `synthetic_italian_dso_feeder.json` | The synthetic feeder as a pandapower network (`pandapower.from_json`): grid connection, transformer, breaker, cables and switches, loads and generators. |
 
 **What the map shows.** Both networks side by side (button *Real network* / *Synthetic network*), with the equipment drawn explicitly: the grid connection, the transformer, the
 20 kV busbar, the breaker, the cables (thickness = current rating) and the switches (dashed). Three operating points (annual mean, the highest load and the highest generation of
@@ -65,16 +65,16 @@ click a cable, a switch or the transformer for its data and loading. Scroll to z
 Extra arguments after the image name are passed on to the pipeline:
 
 ```bash
-docker run --rm -v ... gridstudio-enel --seed 7        # another random synthetic feeder
-docker run --rm -v ... gridstudio-enel --no-map        # without the map
-docker run --rm gridstudio-enel --help                 # all options (no data needed)
+docker run --rm -v ... gridstudio-italian-dso --seed 7        # another random synthetic feeder
+docker run --rm -v ... gridstudio-italian-dso --no-map        # without the map
+docker run --rm gridstudio-italian-dso --help                 # all options (no data needed)
 ```
 
 | Option | Effect |
 |---|---|
 | `--seed N` | random seed of the synthetic feeder (default 42; the same seed always gives the same feeder) |
 | `--no-map` | do not write the map page |
-| `--enel-data-dir`, `--output-dir` | folders inside the container (defaults `/data` and `/output`; normally not needed) |
+| `--italian-dso-data-dir`, `--output-dir` | folders inside the container (defaults `/data` and `/output`; normally not needed) |
 | `--feeder-only --default-fit --mean-sizing --default-cables` | together: the first version that was delivered (every connection a cable, no transformer, no switches, defaults of the paper) |
 
 Each of the four last options can also be used alone to switch one improvement off: `--feeder-only` (no transformer/switches), `--default-fit` (defaults of the paper for
@@ -85,18 +85,18 @@ of the real network).
 
 ```bash
 # real feeder against 10 synthetic feeders: structure, cables and one real day (10-20 minutes); table on screen, numbers in output/report_rows.json
-docker run --rm -v "<ENEL data folder>:/data:ro" -v "<output folder>:/output" gridstudio-enel compare --out /output/report_rows.json
+docker run --rm -v "<Italian DSO data folder>:/data:ro" -v "<output folder>:/output" gridstudio-italian-dso compare --out /output/report_rows.json
 
 # automated tests (no data needed)
-docker run --rm gridstudio-enel test
+docker run --rm gridstudio-italian-dso test
 
 # list of the commands
-docker run --rm gridstudio-enel help
+docker run --rm gridstudio-italian-dso help
 ```
 
 ## 7. Shortcut with docker compose (optional)
 
-Instead of typing the folders every time: copy `.env.example` to `.env`, set `ENEL_DATA_DIR` (forward slashes, also on Windows), then
+Instead of typing the folders every time: copy `.env.example` to `.env`, set `ITALIAN_DSO_DATA_DIR` (forward slashes, also on Windows), then
 
 ```bash
 docker compose --profile tools build
@@ -109,11 +109,11 @@ docker compose run --rm test            # = tests of section 6
 
 | Message / symptom | Cause and fix |
 |---|---|
-| `ENEL network file not found: /data/ppnet_.../...json` | The data folder is not mounted, or it is the wrong folder. `-v` must point to the folder that **contains** `ppnet_DW00.1.382280-VE_202412/` and `timeseries_data/`. |
+| `Italian DSO network file not found: /data/ppnet_.../...json` | The data folder is not mounted, or it is the wrong folder. `-v` must point to the folder that **contains** `ppnet_DW00.1.382280-VE_202412/` and `timeseries_data/`. |
 | `error during connect` / `cannot connect to the Docker daemon` | Docker Desktop is not running yet. Start it and wait until it reports "Engine running". |
 | Path with spaces on Windows | Put the whole `-v` argument in double quotes, as in the example. |
 | No files in `output` | The output folder was not mounted. Add `-v "${PWD}\output:/output"` (PowerShell) or `-v "$PWD/output:/output"` (Linux/macOS). |
-| No `synthetic_enel_map.html` | You used `--no-map`, or look in the folder you mounted at `/output`. The pipeline prints the path of the file. |
+| No `synthetic_italian_dso_map.html` | You used `--no-map`, or look in the folder you mounted at `/output`. The pipeline prints the path of the file. |
 | `no configuration file provided` (compose) | Run the command in the repository folder (the one with `docker-compose.yml`). |
 
 ## 9. Notes

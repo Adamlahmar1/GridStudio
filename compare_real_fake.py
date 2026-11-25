@@ -1,5 +1,5 @@
 # Author: Adam Lahmar <adam.lahmar@rwth-aachen.de>
-"""Real ENEL feeder against the synthetic feeders, with the same electrical test for all of them.
+"""Real Italian DSO feeder against the synthetic feeders, with the same electrical test for all of them.
 
     python compare_real_fake.py --seeds 10 --out report_rows.json
 
@@ -8,8 +8,8 @@ annual-mean power flow and one real day (288 steps of 5 minutes, loads and gener
   * "original fake": the version of pipeline.py with all new options switched off (--feeder-only --default-fit --mean-sizing --default-cables)
   * "new fake"     : the default of pipeline.py (switches + transformer, measured positions/sizes/power factors, cable types of the
                      real network, design sizing for the busiest and the sunniest moment, utilisation cap)
-and prints a short table. The numbers in REPORT_enel_real_vs_fake.md come from this script (10 seeds); it needs the ENEL data
-(--enel-data-dir or the environment variable ENEL_DATA_DIR).
+and prints a short table. The numbers in REPORT_italian_dso_real_vs_fake.md come from this script (10 seeds); it needs the Italian DSO data
+(--italian-dso-data-dir or the environment variable ITALIAN_DSO_DATA_DIR).
 """
 import argparse
 import os
@@ -22,8 +22,8 @@ import numpy as np
 import pandapower as pp
 
 warnings.filterwarnings("ignore")
-from feeder_pipeline.loaders import load_enel
-from pipeline import DEFAULT_ENEL_DATA_DIR
+from feeder_pipeline.loaders import load_italian_dso
+from pipeline import DEFAULT_ITALIAN_DSO_DATA_DIR
 from powergrid_synth.distribution.distribution_analysis import fit_params_from_feeders
 from powergrid_synth.distribution.distribution_converter import pandapower_to_feeders
 from powergrid_synth.distribution.distribution_equipment import (
@@ -36,22 +36,22 @@ from powergrid_synth.distribution.distribution_validation import (
     compare_cable_lengths, compare_feeders, compute_emergent_properties, feeder_counts)
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--enel-data-dir", default=os.environ.get("ENEL_DATA_DIR", DEFAULT_ENEL_DATA_DIR))
+ap.add_argument("--italian-dso-data-dir", default=os.environ.get("ITALIAN_DSO_DATA_DIR", DEFAULT_ITALIAN_DSO_DATA_DIR))
 ap.add_argument("--seeds", type=int, default=10)
 ap.add_argument("--out", default="report_rows.json", help="per-seed numbers as JSON")
 _args = ap.parse_args()
-DEFAULT_ENEL_DATA_DIR = _args.enel_data_dir
+DEFAULT_ITALIAN_DSO_DATA_DIR = _args.italian_dso_data_dir
 N_SEEDS = _args.seeds
 OUT = Path(_args.out)
 
-ref = load_enel(DEFAULT_ENEL_DATA_DIR)
+ref = load_italian_dso(DEFAULT_ITALIAN_DSO_DATA_DIR)
 real_net = ref.net
 feeders = pandapower_to_feeders(real_net)
 real = feeders[0]
 em = compute_emergent_properties(real)
 profile = ref.day
-design = design_load_mw(real_net, Path(DEFAULT_ENEL_DATA_DIR) / "timeseries_data")
-design_gen = design_generation_mw(real_net, Path(DEFAULT_ENEL_DATA_DIR) / "timeseries_data")
+design = design_load_mw(real_net, Path(DEFAULT_ITALIAN_DSO_DATA_DIR) / "timeseries_data")
+design_gen = design_generation_mw(real_net, Path(DEFAULT_ITALIAN_DSO_DATA_DIR) / "timeseries_data")
 equipment = upstream_from_net(real_net)
 
 
